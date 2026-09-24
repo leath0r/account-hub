@@ -109,7 +109,7 @@ async def main() -> None:
     try:
         # подготовка: админ, два аккаунта, второй пользователь с доступом
         await st.text(ADMIN, f"/claim {access.CLAIM['token']}")
-        for phone_no, pwd in (("+79140000001", None), ("+79140000002", "secret-2fa")):
+        for phone_no, pwd in (("+70000000001", None), ("+70000000002", "secret-2fa")):
             await st.press(ADMIN, "add")
             await st.text(ADMIN, phone_no)
             if phone_no.endswith("1"):

@@ -11,3 +11,6 @@ backups/
 __pycache__/
 venv/
 .venv/
+
+# адрес своего сервера для deploy.ps1 / hub.ps1
+**/deploy/server.local

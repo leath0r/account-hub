@@ -52,7 +52,7 @@ def load() -> Config:
         api_hash=os.environ.get("API_HASH", "").strip() or None,
         admin_ids=frozenset(int(x) for x in os.environ.get("ADMIN_IDS", "").replace(",", " ").split() if x.isdigit()),
         session_key=_session_key(),
-        tz=timezone(timedelta(hours=float(os.environ.get("TZ_OFFSET", "11")))),
+        tz=timezone(timedelta(hours=float(os.environ.get("TZ_OFFSET", "3")))),
         db_path=BASE / os.environ.get("DB_PATH", "hub.db"),
         proxy=os.environ.get("PROXY", "").strip() or None,
         new_chats_per_day=int(os.environ.get("NEW_CHATS_PER_DAY", "20").strip() or 20),

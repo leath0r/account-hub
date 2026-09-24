@@ -3,7 +3,7 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
-TZ = timezone(timedelta(hours=11))  # Сахалин
+TZ = timezone(timedelta(hours=11))  # часовой пояс демо
 
 STATUS = {
     "online": ("#34D399", "Онлайн", "🟢"),
@@ -113,7 +113,7 @@ GROUPS = [
 
 CHANNELS = [
     ("Техно-дайджест", ["Вышла новая версия Python", "Обзор лучших терминалов года", "Как устроен QUIC — простыми словами"]),
-    ("Сахалин сегодня", ["Паром до Ванино отменён из-за шторма", "В Южно-Сахалинске открыли новый сквер", "Прогноз: к выходным до +15"]),
+    ("Город сегодня", ["Паром отменён из-за шторма", "В центре открыли новый сквер", "Прогноз: к выходным до +15"]),
     ("Музыка 🎧", ["Плейлист недели", "Новый альбом уже на площадках", "Лучшее за месяц"]),
 ]
 
@@ -156,10 +156,10 @@ def _account(acc_id: int, name: str, username: str, phone: str, status: str) -> 
 
 ACCOUNTS: dict[int, Account] = {
     a.id: a for a in [
-        _account(1, "Алекс", "alex_hub", "+7 914 755 12 01", "online"),
-        _account(2, "Макс", "account2", "+7 924 310 12 34", "online"),
-        _account(3, "Джон", "john_w", "+7 914 082 77 19", "need_login"),
-        _account(4, "Саша", "sasha_k", "+7 962 118 40 55", "online"),
+        _account(1, "Алекс", "alex_hub", "+7 000 755 12 01", "online"),
+        _account(2, "Макс", "account2", "+7 000 310 12 34", "online"),
+        _account(3, "Джон", "john_w", "+7 000 082 77 19", "need_login"),
+        _account(4, "Саша", "sasha_k", "+7 000 118 40 55", "online"),
     ]
 }
 

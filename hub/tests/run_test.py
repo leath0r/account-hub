@@ -153,12 +153,12 @@ async def scenarios(st: Stand) -> None:
     await st.press(ADMIN, label="Добавить аккаунт")
     await st.text(ADMIN, "123")
     check("Не похоже на номер" in st.caption(ADMIN), "короткий номер отклонён")
-    await st.text(ADMIN, "+7 999 000 00 00")
+    await st.text(ADMIN, "+7 000 999 99 99")
     check("Неверный номер" in st.caption(ADMIN) and not st.has(ADMIN, "Готово"), "неизвестный номер — остаёмся на шаге номера")
     w.flood_next_code = True
-    await st.text(ADMIN, "+7 914 000-00-01")
+    await st.text(ADMIN, "+7 000 000-00-01")
     check("12:34" in st.caption(ADMIN) and not st.has(ADMIN, "Готово"), "FloodWait: показан таймер, остаёмся на шаге номера")
-    await st.text(ADMIN, "+7 914 000-00-01")
+    await st.text(ADMIN, "+7 000 000-00-01")
     check(st.has(ADMIN, "Готово") and "приложение Telegram" in st.caption(ADMIN), "код отправлен, виден кейпад")
     deleted_before = len(st.session.deleted)
     await keypad(st, ADMIN, "00000")
@@ -174,7 +174,7 @@ async def scenarios(st: Stand) -> None:
     print("\n▶ Добавление аккаунта с 2FA")
     await st.press(ADMIN, "adm")
     await st.press(ADMIN, "add")
-    await st.text(ADMIN, "+79140000002")
+    await st.text(ADMIN, "+70000000002")
     await keypad(st, ADMIN, "12345")
     check("двухэтапная" in st.caption(ADMIN), "запрошен пароль 2FA")
     await st.text(ADMIN, "wrong")
@@ -182,12 +182,12 @@ async def scenarios(st: Stand) -> None:
     await st.text(ADMIN, "secret-2fa")
     check(st.has(ADMIN, "Открыть аккаунт") and 2 in st.hub.accs, "аккаунт #2 добавлен")
     row = await st.db.account(2)
-    check(b"secret" not in (row["session"] or b"") and b"79140000002" not in row["phone"], "сессия и номер в БД зашифрованы")
+    check(b"secret" not in (row["session"] or b"") and b"70000000002" not in row["phone"], "сессия и номер в БД зашифрованы")
 
     print("\n▶ Повторное добавление того же аккаунта")
     await st.press(ADMIN, "adm")
     await st.press(ADMIN, "add")
-    await st.text(ADMIN, "+79140000001")
+    await st.text(ADMIN, "+70000000001")
     await keypad(st, ADMIN, "12345")
     check(len(st.hub.accs) == 2 and "уже был" in st.caption(ADMIN), "дубль не создаётся, сессия обновлена")
 
@@ -395,7 +395,7 @@ async def random_walk(st: Stand, n: int) -> None:
     print(f"\n▶ Случайные нажатия: {n}")
     rnd = random.Random(20260924)
     skip = ("aadok:", "uban:", "uadm:", "setxok:")
-    texts = ["роутер", "привет", "+79140000001", "12345", "secret-2fa", "x", "Factorio",
+    texts = ["роутер", "привет", "+70000000001", "12345", "secret-2fa", "x", "Factorio",
              "@friend_new", "@helper_bot", "t.me/some_channel", "@nobody_x", "@ivan501"]
     for i in range(n):
         uid = rnd.choice([ADMIN, BOB, BOB])

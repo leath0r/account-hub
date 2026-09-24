@@ -75,8 +75,8 @@ class FakeWorld:
 
     def __init__(self) -> None:
         self.accounts = {
-            "+79140000001": build_account(501, "+79140000001", "Алекс", "alex_hub", None, 0),
-            "+79140000002": build_account(502, "+79140000002", "Макс", "", "secret-2fa", 1),
+            "+70000000001": build_account(501, "+70000000001", "Алекс", "alex_hub", None, 0),
+            "+70000000002": build_account(502, "+70000000002", "Макс", "", "secret-2fa", 1),
         }
         self.sessions: dict[str, int] = {}   # действующие сессии → tg_id
         self.sent: list[tuple[int, int, str]] = []

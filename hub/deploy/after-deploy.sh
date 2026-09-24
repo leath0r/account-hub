@@ -57,7 +57,7 @@ fi
 
 if ! grep -q '^PROXY=' .env && ! curl -s -m 8 -o /dev/null https://api.telegram.org/; then
   echo "!!! Telegram с сервера недоступен, а прокси не настроен — бот не запускаю."
-  echo "    Настроить:  ssh -t qwe@<сервер> '~/.local/bin/hubctl proxy set'"
+  echo "    Настроить:  ssh -t <user>@<сервер> '~/.local/bin/hubctl proxy set'"
   exit 0
 fi
 systemctl --user restart accounthub.service

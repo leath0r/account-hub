@@ -312,6 +312,6 @@ async def add_password(message: Message, state: FSMContext, ui: UI) -> None:
         a.status = "online"
         audit("Ты", f"#{a.id} повторный вход")
     else:
-        a = add_account(data.get("phone_raw", "+79000000000"))
+        a = add_account(data.get("phone_raw", "+70000000000"))
         audit("Ты", f"добавил аккаунт #{a.id} {a.name}")
     await ui.show(message.from_user.id, message.chat.id, add_card("done", data, a=a))

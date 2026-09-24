@@ -2,8 +2,12 @@
 Description=Account Hub — бэкап базы раз в сутки
 
 [Timer]
-# сервер живёт в UTC — время указываем сахалинское явно
-OnCalendar=*-*-* 04:30:00 Asia/Sakhalin
+# 04:30 по часам сервера. Своё время/пояс — drop-in, который выкладка не трогает:
+#   ~/.config/systemd/user/accounthub-backup.timer.d/local.conf
+#   [Timer]
+#   OnCalendar=
+#   OnCalendar=*-*-* 04:30:00 Europe/Moscow
+OnCalendar=*-*-* 04:30:00
 Persistent=true
 RandomizedDelaySec=10min
 
