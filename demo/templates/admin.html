@@ -1,0 +1,16 @@
+{% from "macros.html" import corners, glow %}
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ glow(1150, 90, "#F5A623") }}{{ corners() }}</svg>
+  <div class="content" style="gap:18px">
+    <div class="row" style="gap:24px">
+      <div class="h1" style="font-size:58px">Админ-панель</div>
+      <div class="admin-chip" style="margin-left:auto">ADMIN</div>
+    </div>
+    <div class="sub">Аккаунты, доступы и журнал действий</div>
+    <div class="row" style="margin-top:auto;gap:22px;align-items:stretch">
+      {% for t in tiles %}
+      <div class="tile"><div class="num" style="color:{{ t.color }}">{{ t.num }}</div><div class="lbl">{{ t.label }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>

@@ -1,0 +1,23 @@
+{% from "macros.html" import avatar, corners, constellation %}
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ constellation() }}{{ corners() }}</svg>
+  <div class="content" style="gap:22px">
+    <div class="eyebrow">Account Hub</div>
+    <div class="h1">Выберите<br>аккаунт</div>
+    {% if accounts %}
+    <div class="sub">{{ accounts|length }} {{ acc_word }} · <span style="color:var(--online)">{{ online }} онлайн</span>
+      {%- if need %} · <span style="color:var(--amber)">{{ need }} ждёт входа</span>{% endif %}</div>
+    <div class="row" style="margin-top:auto;gap:34px;align-items:flex-end">
+      {% for a in accounts[:6] %}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        {{ avatar(a, 128) }}
+        <div style="font-weight:700;font-size:26px">#{{ a.id }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="sub">Аккаунтов пока нет</div>
+    <div class="hint" style="margin-top:auto">{{ empty_hint }}</div>
+    {% endif %}
+  </div>
+</div>

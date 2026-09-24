@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css">
+<style>
+.step{display:flex;align-items:center;gap:16px}
+.step .c{width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:28px;border:3px solid var(--border2);background:var(--surface);color:var(--muted);flex:none}
+.step .t{font-weight:700;font-size:28px;color:var(--muted)}
+.line{flex:1;height:3px;background:var(--border);margin:0 18px}
+.box{width:112px;height:128px;border-radius:24px;background:var(--surface);border:3px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:'Unbounded',sans-serif;font-weight:700;font-size:60px}
+.box.cur{border-color:var(--violet);box-shadow:0 0 0 6px rgba(124,92,252,.18)}
+</style></head>
+<body>
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">
+    <g stroke="#2DD4BF" stroke-width="3" stroke-opacity="0.6" fill="none">
+      <polyline points="64,36 36,36 36,64"/><polyline points="1216,604 1244,604 1244,576"/>
+    </g>
+  </svg>
+  <div class="content" style="gap:36px;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:24px">
+      <div class="h1" style="font-size:54px">Добавить аккаунт</div>
+      <div style="margin-left:auto;font-weight:800;font-size:22px;letter-spacing:2px;color:#14161C;background:var(--amber);border-radius:40px;padding:10px 22px">ADMIN</div>
+    </div>
+    <div style="display:flex;align-items:center">
+      <div class="step"><div class="c" style="background:#12351F;border-color:var(--online);color:var(--online)">
+        <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="#34D399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></div><div class="t">Номер</div></div>
+      <div class="line"></div>
+      <div class="step"><div class="c" style="background:var(--violet);border-color:var(--violet);color:var(--text)">2</div><div class="t" style="color:var(--text)">Код</div></div>
+      <div class="line"></div>
+      <div class="step"><div class="c">3</div><div class="t">Готово</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:22px;margin-bottom:10px">
+      <div class="box">4</div><div class="box">7</div><div class="box">2</div>
+      <div class="box cur"></div><div class="box"></div>
+      <div style="margin-left:28px;display:flex;flex-direction:column;gap:10px">
+        <div style="font-weight:700;font-size:28px">+7 ••• ••• 12 34</div>
+        <div style="font-weight:600;font-size:24px;color:var(--muted);line-height:1.35">Вводите кнопками ниже —<br>код, отправленный текстом,<br>Telegram сразу сжигает</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

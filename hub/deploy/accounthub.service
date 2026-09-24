@@ -1,0 +1,18 @@
+[Unit]
+Description=Account Hub — Telegram-бот, панель для нескольких аккаунтов
+After=network-online.target accounthub-proxy.service
+Wants=network-online.target accounthub-proxy.service
+# перезапускать без лимита: пропал интернет/прокси — бот поднимется сам, когда связь вернётся
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h/accounthub
+ExecStart=%h/accounthub/venv/bin/python -u main.py
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+# Токен, API_ID/API_HASH и SESSION_KEY — в %h/accounthub/.env (права 600)
+
+[Install]
+WantedBy=default.target

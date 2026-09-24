@@ -1,0 +1,11 @@
+[Unit]
+Description=Account Hub — бэкап базы раз в сутки
+
+[Timer]
+# сервер живёт в UTC — время указываем сахалинское явно
+OnCalendar=*-*-* 04:30:00 Asia/Sakhalin
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

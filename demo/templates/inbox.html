@@ -1,0 +1,21 @@
+{% from "macros.html" import avatar, corners, constellation %}
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ constellation() }}{{ corners() }}</svg>
+  <div class="content" style="gap:22px">
+    <div class="eyebrow">Account Hub</div>
+    <div class="h1">Входящие</div>
+    {% if total %}
+    <div class="sub"><span style="color:var(--teal)">{{ total }} новых</span> в {{ chats }} {{ chats_word }}</div>
+    {% else %}
+    <div class="sub">Всё прочитано ✓</div>
+    {% endif %}
+    <div class="row" style="margin-top:auto;gap:44px;align-items:flex-end">
+      {% for item in per_account[:6] %}
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        {{ avatar(item.a, 120, badge=False, count=item.count, dim=not item.count) }}
+        <div style="font-weight:700;font-size:26px;{% if not item.count %}color:var(--muted){% endif %}">#{{ item.a.id }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>

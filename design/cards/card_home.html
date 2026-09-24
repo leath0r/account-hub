@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="utf-8"><link rel="stylesheet" href="base.css"></head>
+<body>
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">
+    <defs><filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="18"/></filter></defs>
+    <g stroke="#333A48" stroke-width="1.5" stroke-opacity="0.55">
+      <line x1="840" y1="110" x2="950" y2="80"/><line x1="950" y1="80" x2="1030" y2="170"/>
+      <line x1="1030" y1="170" x2="1120" y2="100"/><line x1="1120" y1="100" x2="1200" y2="190"/>
+      <line x1="1200" y1="190" x2="1150" y2="300"/><line x1="1150" y1="300" x2="1040" y2="290"/>
+      <line x1="1040" y1="290" x2="950" y2="250"/><line x1="950" y1="250" x2="840" y2="110"/>
+      <line x1="1030" y1="170" x2="950" y2="250"/><line x1="1150" y1="300" x2="1210" y2="360"/>
+    </g>
+    <circle cx="840" cy="110" r="38" fill="#7C5CFC" opacity="0.18" filter="url(#glow)"/>
+    <circle cx="1200" cy="190" r="38" fill="#2DD4BF" opacity="0.18" filter="url(#glow)"/>
+    <g>
+      <circle cx="840" cy="110" r="7" fill="#7C5CFC"/><circle cx="950" cy="80" r="4" fill="#2DD4BF"/>
+      <circle cx="1030" cy="170" r="5" fill="#7C5CFC"/><circle cx="1120" cy="100" r="4" fill="#2DD4BF"/>
+      <circle cx="1200" cy="190" r="7" fill="#2DD4BF"/><circle cx="1150" cy="300" r="4" fill="#7C5CFC"/>
+      <circle cx="1040" cy="290" r="5" fill="#2DD4BF"/><circle cx="950" cy="250" r="4" fill="#7C5CFC"/>
+      <circle cx="1210" cy="360" r="4" fill="#2DD4BF"/>
+    </g>
+    <g stroke="#2DD4BF" stroke-width="3" stroke-opacity="0.6" fill="none">
+      <polyline points="64,36 36,36 36,64"/><polyline points="1216,604 1244,604 1244,576"/>
+    </g>
+  </svg>
+  <div class="content" style="gap:22px">
+    <div class="eyebrow">Account Hub</div>
+    <div class="h1">Выберите<br>аккаунт</div>
+    <div class="sub">4 аккаунта · <span style="color:var(--online)">3 онлайн</span> · 1 ждёт входа</div>
+    <div style="margin-top:auto;display:flex;gap:34px;align-items:flex-end">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div class="av g1" style="width:128px;height:128px;font-size:52px">A<span class="badge" style="background:var(--online)"></span></div>
+        <div style="font-weight:700;font-size:26px">#1</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div class="av g2" style="width:128px;height:128px;font-size:52px">M<span class="badge" style="background:var(--online)"></span></div>
+        <div style="font-weight:700;font-size:26px">#2</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div class="av solid-v" style="width:128px;height:128px;font-size:52px">J<span class="badge" style="background:var(--amber)"></span></div>
+        <div style="font-weight:700;font-size:26px">#3</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div class="av solid-t" style="width:128px;height:128px;font-size:52px">S<span class="badge" style="background:var(--online)"></span></div>
+        <div style="font-weight:700;font-size:26px">#4</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

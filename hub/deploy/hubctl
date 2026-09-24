@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Управление Account Hub на сервере.  hubctl <команда>   (без команды — справка)
+set -euo pipefail
+APP="$HOME/accounthub"
+UNIT=accounthub
+sc() { systemctl --user "$@"; }
+
+case "${1:-help}" in
+  status)
+    sc status "$UNIT" --no-pager -n 0 || true
+    echo "прокси: $(sc is-active accounthub-proxy 2>/dev/null || true) · $(grep '^PROXY=' "$APP/.env" 2>/dev/null || echo 'PROXY не задан')"
+    echo; echo "── последние строки лога ──"; tail -n 8 "$APP/hub.log" 2>/dev/null || echo "(лога ещё нет)"
+    ;;
+  start|stop|restart)
+    sc "$1" "$UNIT"; sleep 2; echo "$UNIT: $(sc is-active "$UNIT" || true)"
+    ;;
+  logs)
+    if [ "${2:-}" = "-f" ]; then tail -n 30 -F "$APP/hub.log"; else tail -n "${2:-60}" "$APP/hub.log"; fi
+    ;;
+  journal)
+    journalctl --user -u "$UNIT" -n "${2:-100}" --no-pager
+    ;;
+  claim)
+    line=$(grep -h "/claim" "$APP"/hub.log* 2>/dev/null | tail -n 1 || true)
+    if [ -n "$line" ]; then echo "$line"; else echo "Кода нет: админ уже назначен или бот ещё не запускался."; fi
+    ;;
+  env)
+    "${EDITOR:-nano}" "$APP/.env"; chmod 600 "$APP/.env"; echo "Чтобы применить: hubctl restart"
+    ;;
+  backup)
+    [ -f "$APP/hub.db" ] || { echo "Базы ещё нет — бэкапить нечего."; exit 0; }
+    mkdir -p "$APP/backups"; chmod 700 "$APP/backups"
+    f="$APP/backups/hub-$(date +%Y%m%d-%H%M%S).db"
+    "$APP/venv/bin/python" - "$APP/hub.db" "$f" <<'PY'
+import sqlite3, sys
+src, dst = sqlite3.connect(sys.argv[1]), sqlite3.connect(sys.argv[2])
+src.backup(dst)
+dst.close(); src.close()
+PY
+    chmod 600 "$f"
+    ls -1t "$APP"/backups/hub-*.db | tail -n +15 | xargs -r rm --
+    echo "Бэкап: $f  (хранится 14 последних; без SESSION_KEY из .env сессии не расшифровать)"
+    ;;
+  proxy)
+    PCONF="$HOME/.config/accounthub-proxy"
+    PROXY_URL="socks5://127.0.0.1:10808"
+    case "${2:-status}" in
+      set)
+        mkdir -p "$PCONF"; chmod 700 "$PCONF"
+        if [ -t 0 ]; then
+          echo "Вставь ссылку vless:// · trojan:// · hy2:// (ввод скрыт) и нажми Enter:"
+          read -rs link; echo
+        else
+          link=$(cat)   # из stdin: printf '%s' "<ссылка>" | hubctl proxy set  (read без \n в конце роняет set -e)
+        fi
+        printf '%s' "$link" | "$APP/venv/bin/python" "$APP/deploy/proxy_link.py" "$PCONF"
+        unset link
+        chmod 600 "$PCONF"/*
+        HY="$HOME/.local/opt/hysteria/hysteria"
+        if [ -f "$PCONF/hysteria.yaml" ] && [ ! -x "$HY" ]; then
+          echo "── качаю клиент Hysteria2"
+          mkdir -p "$(dirname "$HY")"
+          curl -fsSL -m 180 -o "$HY.tmp" https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
+          mv "$HY.tmp" "$HY"; chmod +x "$HY"
+        fi
+        if grep -q '^PROXY=' "$APP/.env"; then sed -i "s|^PROXY=.*|PROXY=$PROXY_URL|" "$APP/.env"
+        else printf '\n# Telegram у провайдера заблокирован — бот ходит через xray (hubctl proxy)\nPROXY=%s\n' "$PROXY_URL" >> "$APP/.env"; fi
+        sc enable accounthub-proxy >/dev/null 2>&1; sc restart accounthub-proxy; sleep 2
+        "$0" proxy test && sc restart "$UNIT" && echo "Бот перезапущен через прокси."
+        ;;
+      test)
+        code=$(curl -s -m 15 -o /dev/null -w '%{http_code}' --socks5-hostname 127.0.0.1:10808 https://api.telegram.org/ || true)
+        if [ -n "$code" ] && [ "$code" != "000" ]; then echo "Прокси работает: api.telegram.org ответил $code"
+        else echo "!!! Через прокси Telegram недоступен. Смотри: hubctl proxy logs"; exit 1; fi
+        ;;
+      off)
+        sed -i '/^PROXY=/d' "$APP/.env"; sc stop accounthub-proxy || true; sc disable accounthub-proxy >/dev/null 2>&1 || true
+        sc restart "$UNIT"; echo "Прокси выключен, бот ходит в Telegram напрямую."
+        ;;
+      logs) journalctl --user -u accounthub-proxy -n "${3:-50}" --no-pager ;;
+      *) sc status accounthub-proxy --no-pager -n 0 || true; grep '^PROXY=' "$APP/.env" || echo "PROXY в .env не задан" ;;
+    esac
+    ;;
+  selftest)
+    cd "$APP" && venv/bin/python -u tests/run_test.py "${2:-300}"
+    ;;
+  update-deps)
+    "$APP/venv/bin/pip" install -q -U -r "$APP/requirements.txt" && "$APP/venv/bin/python" -m playwright install chromium
+    echo "Готово. Применить: hubctl restart"
+    ;;
+  *)
+    cat <<'HELP'
+hubctl status        — жив ли бот + хвост лога
+hubctl start|stop|restart
+hubctl logs [N|-f]   — лог бота (hub.log); -f — следить
+hubctl journal [N]   — журнал systemd (падения, трейсбеки при старте)
+hubctl claim         — код /claim для первого админа
+hubctl env           — открыть .env (API_ID, API_HASH, ADMIN_IDS…)
+hubctl backup        — бэкап базы (автоматически каждый день в 04:30)
+hubctl proxy set     — вставить ссылку своего VPN: vless:// · trojan:// · hy2:// (нужен ssh -t)
+hubctl proxy test|off|logs|status — проверить / выключить / логи клиента прокси
+hubctl selftest [N]  — стенд: фейковый Telegram, N случайных нажатий
+hubctl update-deps   — обновить библиотеки и Chromium
+HELP
+    ;;
+esac

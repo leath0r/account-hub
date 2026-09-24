@@ -1,0 +1,18 @@
+{% from "macros.html" import avatar, corners, icon %}
+<div class="card">
+  <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ corners() }}</svg>
+  <div class="content">
+    <div class="row" style="gap:48px">
+      <div class="icon-tile" style="background:{{ tile_bg }}">{{ icon(icon_name, 92, icon_color) }}</div>
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <div class="eyebrow">{{ eyebrow }}</div>
+        <div class="h2">{{ title }}</div>
+        <div class="sub">{{ sub }}</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:auto;gap:20px">
+      {% if a %}{{ avatar(a, 72, badge=False) }}<div style="font-weight:700;font-size:28px">{{ a.name }}</div>{% endif %}
+      {% if page_label %}<div class="chip" style="margin-left:auto">{{ page_label }}</div>{% endif %}
+    </div>
+  </div>
+</div>

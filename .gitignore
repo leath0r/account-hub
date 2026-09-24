@@ -1,0 +1,13 @@
+# секреты: токен бота, API_ID/API_HASH, SESSION_KEY
+.env
+**/.env
+# база с зашифрованными сессиями, бэкапы, логи
+*.db
+*.db-*
+backups/
+*.log
+*.log.*
+# окружение
+__pycache__/
+venv/
+.venv/

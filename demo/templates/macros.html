@@ -1,0 +1,73 @@
+{% macro avatar(a, size=128, badge=True, count=None, dim=False) -%}
+<div class="av {{ a.style }}{% if dim %} dim{% endif %}" style="width:{{ size }}px;height:{{ size }}px;font-size:{{ (size * 0.41)|int }}px">{{ a.letter }}
+  {%- if badge %}<span class="badge" style="background:{{ a.status_color }}"></span>{% endif %}
+  {%- if count %}<span class="count">{{ count }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro corners() -%}
+<g stroke="#2DD4BF" stroke-width="3" stroke-opacity="0.6" fill="none">
+  <polyline points="64,36 36,36 36,64"/><polyline points="1216,604 1244,604 1244,576"/>
+</g>
+{%- endmacro %}
+
+{% macro constellation() -%}
+<defs><filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="18"/></filter></defs>
+<g stroke="#333A48" stroke-width="1.5" stroke-opacity="0.55">
+  <line x1="840" y1="110" x2="950" y2="80"/><line x1="950" y1="80" x2="1030" y2="170"/>
+  <line x1="1030" y1="170" x2="1120" y2="100"/><line x1="1120" y1="100" x2="1200" y2="190"/>
+  <line x1="1200" y1="190" x2="1150" y2="300"/><line x1="1150" y1="300" x2="1040" y2="290"/>
+  <line x1="1040" y1="290" x2="950" y2="250"/><line x1="950" y1="250" x2="840" y2="110"/>
+  <line x1="1030" y1="170" x2="950" y2="250"/><line x1="1150" y1="300" x2="1210" y2="360"/>
+</g>
+<circle cx="840" cy="110" r="38" fill="#7C5CFC" opacity="0.18" filter="url(#glow)"/>
+<circle cx="1200" cy="190" r="38" fill="#2DD4BF" opacity="0.18" filter="url(#glow)"/>
+<g>
+  <circle cx="840" cy="110" r="7" fill="#7C5CFC"/><circle cx="950" cy="80" r="4" fill="#2DD4BF"/>
+  <circle cx="1030" cy="170" r="5" fill="#7C5CFC"/><circle cx="1120" cy="100" r="4" fill="#2DD4BF"/>
+  <circle cx="1200" cy="190" r="7" fill="#2DD4BF"/><circle cx="1150" cy="300" r="4" fill="#7C5CFC"/>
+  <circle cx="1040" cy="290" r="5" fill="#2DD4BF"/><circle cx="950" cy="250" r="4" fill="#7C5CFC"/>
+  <circle cx="1210" cy="360" r="4" fill="#2DD4BF"/>
+</g>
+{%- endmacro %}
+
+{% macro glow(x, y, color="#7C5CFC") -%}
+<defs><filter id="bigglow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="40"/></filter></defs>
+<circle cx="{{ x }}" cy="{{ y }}" r="120" fill="{{ color }}" opacity="0.22" filter="url(#bigglow)"/>
+{%- endmacro %}
+
+{% macro icon(name, size=96, color="#2DD4BF") -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 20 20" fill="none" stroke="{{ color }}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+{%- if name == "search" %}<circle cx="9" cy="9" r="6"/><line x1="14" y1="14" x2="18" y2="18"/>
+{%- elif name == "chats" %}<path d="M3 10a7 7 0 1 1 3.2 5.9L3 17l1.1-3.2A7 7 0 0 1 3 10z"/>
+{%- elif name == "groups" %}<circle cx="7" cy="7" r="3"/><path d="M2 17c0-3 2.5-5 5-5s5 2 5 5"/><circle cx="15" cy="8" r="2.4"/><path d="M13 17c.2-2 1.6-3.6 3.4-4"/>
+{%- elif name == "messages" %}<rect x="2" y="5" width="16" height="11" rx="2"/><path d="M2 6l8 6 8-6"/>
+{%- elif name == "contacts" %}<circle cx="10" cy="7" r="3.5"/><path d="M3.5 17c1-3.2 3.6-5 6.5-5s5.5 1.8 6.5 5"/>
+{%- elif name == "settings" %}<circle cx="10" cy="10" r="2.6"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.3 5.3l1.4 1.4M13.3 13.3l1.4 1.4M14.7 5.3l-1.4 1.4M6.7 13.3l-1.4 1.4"/>
+{%- elif name == "users" %}<circle cx="10" cy="7" r="3.5"/><path d="M3.5 17c1-3.2 3.6-5 6.5-5s5.5 1.8 6.5 5"/><path d="M15.5 3.5l1 1 2-2"/>
+{%- elif name == "log" %}<rect x="4" y="2.5" width="12" height="15" rx="2"/><path d="M7 7h6M7 10h6M7 13h4"/>
+{%- elif name == "accounts" %}<rect x="5" y="2" width="10" height="16" rx="2"/><path d="M9 15h2"/>
+{%- endif %}
+</svg>
+{%- endmacro %}
+
+{% macro stepper(steps) -%}
+<div class="row">
+{%- for s in steps %}
+  <div class="row" style="gap:16px">
+    {%- if s.state == "done" %}
+    <div style="width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#12351F;border:3px solid var(--online);flex:none">
+      <svg width="28" height="28" viewBox="0 0 20 20" fill="none" stroke="#34D399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg></div>
+    <div style="font-weight:700;font-size:28px;color:var(--muted)">{{ s.label }}</div>
+    {%- elif s.state == "cur" %}
+    <div style="width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--violet);border:3px solid var(--violet);font-weight:800;font-size:28px;flex:none">{{ loop.index }}</div>
+    <div style="font-weight:700;font-size:28px">{{ s.label }}</div>
+    {%- else %}
+    <div style="width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface);border:3px solid var(--border2);color:var(--muted);font-weight:800;font-size:28px;flex:none">{{ loop.index }}</div>
+    <div style="font-weight:700;font-size:28px;color:var(--muted)">{{ s.label }}</div>
+    {%- endif %}
+  </div>
+  {%- if not loop.last %}<div style="flex:1;height:3px;background:var(--border);margin:0 18px"></div>{% endif %}
+{%- endfor %}
+</div>
+{%- endmacro %}

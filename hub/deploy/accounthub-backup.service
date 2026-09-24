@@ -1,0 +1,6 @@
+[Unit]
+Description=Account Hub — бэкап базы
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/hubctl backup
