@@ -56,7 +56,8 @@ class Errors(logging.Handler):
 class Stand:
     upd = itertools.count(1)
 
-    async def boot(self, renderer: Renderer, world: FakeWorld, key: str, db_path: Path) -> "Stand":
+    async def boot(self, renderer: Renderer, world: FakeWorld, key: str, db_path: Path,
+                   session: FakeBotSession | None = None) -> "Stand":
         cfg = Config(bot_token="42:TEST", api_id=1, api_hash="x", admin_ids=frozenset(), session_key=key,
                      tz=timezone(timedelta(hours=11)), db_path=db_path, new_chats_per_day=2)
         self.world = world
@@ -65,7 +66,7 @@ class Stand:
         await self.db.connect()
         self.hub = Hub(cfg, self.db, Box(key))
         self.hub.new_client = lambda session="": FakeClient(world, session)
-        self.session = FakeBotSession()
+        self.session = session or FakeBotSession()
         self.bot = Bot(cfg.bot_token, session=self.session, default=DefaultBotProperties(parse_mode="HTML"))
         self.logins = Logins(self.hub)
         self.ui = UI(self.bot, renderer, self.db)
