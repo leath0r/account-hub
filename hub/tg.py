@@ -2,9 +2,11 @@
 
 Все обращения к Telegram идут через Hub._call: слетевшая сессия → статус «Нужен вход» и уведомление
 админам, FloodWait и обрывы связи → HubError с понятным текстом для алерта.
+Тексты ошибок — русские шаблоны; перевод на язык пользователя — в экранах (i18n).
 """
 import asyncio
 import base64
+import io
 import logging
 import re
 import time
@@ -20,6 +22,7 @@ from telethon.errors import (AuthKeyDuplicatedError, ChatWriteForbiddenError, Fl
                              UsernameNotOccupiedError, UserPrivacyRestrictedError, YouBlockedUserError)
 from telethon.sessions import StringSession
 from telethon.tl.functions.contacts import GetContactsRequest
+from telethon.tl.functions.messages import MarkDialogUnreadRequest, SendReactionRequest
 
 from config import Config
 from crypto import Box
@@ -31,18 +34,26 @@ DIALOG_LIMIT = 200      # сколько диалогов тянуть на ак
 DIALOG_TTL = 30         # сек — кэш списка диалогов
 STALE_AFTER = 4         # сек — после нового сообщения кэш обновится не раньше
 SEND_GAP = 2.0          # сек — не больше 1 сообщения в 2 с на аккаунт
+MEDIA_MAX = 45 * 1024 * 1024   # Bot API отправляет файлы до 50 МБ
+PHOTO_TTL = 6 * 3600    # сек — кэш аватарок чатов
 
-STATUS = {  # цвет на карточке, подпись, эмодзи в кнопках
+STATUS = {  # цвет на карточке, подпись (ключ перевода), эмодзи в кнопках
     "online": ("#34D399", "Онлайн", "🟢"),
     "need_login": ("#F5A623", "Нужен вход", "🟠"),
     "offline": ("#5B6273", "Отключён", "⚫"),
     "nonet": ("#5B6273", "Нет связи", "⚫"),
 }
 STYLES = ["g1", "g2", "sv", "st"]
+# Названия-заглушки, которые надо переводить при показе
+SPECIAL_TITLES = {"Избранное", "Удалённый аккаунт", "Без названия", "Без имени"}
 
 
 class HubError(Exception):
-    """Ошибка, которую можно показать пользователю как есть."""
+    """Ошибка, которую можно показать пользователю. msg — русский шаблон ({name}), kw — подстановки."""
+
+    def __init__(self, msg: str = "", **kw) -> None:
+        super().__init__(msg.format(**kw) if kw else msg)
+        self.msg, self.kw = msg, kw
 
 
 class AccountDown(HubError):
@@ -59,8 +70,9 @@ def telethon_proxy(url: str | None) -> dict | None:
 
 
 def fmt_wait(seconds: int) -> str:
+    """12:34 или 2:05:00 — одинаково на любом языке."""
     if seconds >= 3600:
-        return f"{seconds // 3600} ч {seconds % 3600 // 60:02d} мин"
+        return f"{seconds // 3600}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
@@ -105,10 +117,6 @@ class Account:
         return (self.name[:1] or "?").upper()
 
     @property
-    def handle(self) -> str:
-        return f"@{self.username}" if self.username else "без username"
-
-    @property
     def phone_masked(self) -> str:
         d = "".join(c for c in self.phone if c.isdigit())
         if len(d) < 6:
@@ -117,7 +125,11 @@ class Account:
 
     @property
     def photo_uri(self) -> str:
-        return f"data:image/jpeg;base64,{base64.b64encode(self.photo).decode()}" if self.photo else ""
+        return photo_uri(self.photo)
+
+
+def photo_uri(data: bytes | None) -> str:
+    return f"data:image/jpeg;base64,{base64.b64encode(data).decode()}" if data else ""
 
 
 @dataclass
@@ -131,6 +143,7 @@ class Chat:
     last_text: str
     last_time: str
     last_ts: float
+    marked: bool = False   # помечен «непрочитанным» вручную
 
 
 @dataclass
@@ -140,10 +153,6 @@ class Person:
     name: str
     username: str
     kind: str          # user | bot | group | channel
-
-    @property
-    def handle(self) -> str:
-        return f"@{self.username}" if self.username else "без username"
 
 
 USERNAME_RE = re.compile(r"^(?:@|(?:https?://)?(?:t|telegram)\.me/)([A-Za-z][A-Za-z0-9_]{3,31})/?$")
@@ -155,7 +164,7 @@ def parse_username(query: str) -> str | None:
     return m.group(1) if m else None
 
 
-# Ошибки отправки, которые надо объяснить человеческим языком (класс Telethon или код ошибки)
+# Ошибки, которые надо объяснить человеческим языком (класс Telethon или код ошибки)
 SEND_ERRORS = [
     (PeerFloodError, "Telegram ограничил аккаунт: сейчас писать новым людям нельзя (спам-блок). "
                      "Подробности — в @SpamBot с этого аккаунта"),
@@ -165,6 +174,11 @@ SEND_ERRORS = [
     (YouBlockedUserError, "Аккаунт сам заблокировал этого человека — сначала разблокируйте в Telegram"),
     (InputUserDeactivatedError, "Этот аккаунт удалён"),
     (ChatWriteForbiddenError, "Писать в этот чат нельзя"),
+    ("REACTION_INVALID", "Такую реакцию здесь поставить нельзя"),
+    ("REACTIONS_TOO_MANY", "Слишком много разных реакций на этом сообщении"),
+    ("MESSAGE_ID_INVALID", "Этого сообщения уже нет"),
+    ("CHAT_FORWARDS_RESTRICTED", "В этом чате запрещено пересылать сообщения"),
+    ("MEDIA_EMPTY", "Это вложение переслать нельзя"),
 ]
 
 
@@ -175,42 +189,79 @@ class Msg:
     time: str
     text: str
     id: int = 0
-    media: str = ""    # sticker | photo — такие вложения бот умеет показать
+    media: str = ""    # sticker | photo | voice | video_note | video | gif | audio | document
+
+
+MEDIA_ICON = {"sticker": "💬", "photo": "🖼", "voice": "🎤", "video_note": "⏺", "video": "🎬",
+              "gif": "🎞", "audio": "🎵", "document": "📎"}
+
+
+def media_kind(m) -> str:
+    """Какое вложение в сообщении. Порядок важен: голосовое — тоже аудио, стикер и GIF — тоже документы."""
+    if m.sticker:
+        return "sticker"
+    if m.photo:
+        return "photo"
+    if m.voice:
+        return "voice"
+    if m.video_note:
+        return "video_note"
+    if m.gif:
+        return "gif"
+    if m.video:
+        return "video"
+    if m.audio:
+        return "audio"
+    if m.document:
+        return "document"
+    return ""
+
+
+def fmt_duration(seconds) -> str:
+    return f"{int(seconds) // 60}:{int(seconds) % 60:02d}" if seconds else ""
 
 
 def describe(m) -> str:
-    """Текст сообщения + пометка о вложении. Сами файлы — в v0.2."""
-    media = ""
+    """Текст сообщения + пометка о вложении эмодзи — одинаково читается на любом языке."""
     if m.action is not None:
-        return "ℹ️ служебное сообщение"
-    if m.photo:
-        media = "🖼 фото"
-    elif m.sticker:
-        emoji = getattr(m.file, "emoji", None) or ""
-        media = f"стикер {emoji}".strip()
-    elif m.voice:
-        media = "🎤 голосовое"
-    elif m.video_note:
-        media = "⏺ видеосообщение"
-    elif m.gif:
-        media = "GIF"
-    elif m.video:
-        media = "🎬 видео"
-    elif m.audio:
-        media = "🎵 аудио"
+        return "ℹ️"
+    kind = media_kind(m)
+    f = m.file
+    if kind == "sticker":
+        media = f"💬 {getattr(f, 'emoji', None) or ''}".strip()
+    elif kind in ("voice", "video_note", "video", "audio"):
+        media = f"{MEDIA_ICON[kind]} {fmt_duration(getattr(f, 'duration', None))}".strip()
+    elif kind == "gif":
+        media = "🎞 GIF"
+    elif kind == "document":
+        media = f"📎 {getattr(f, 'name', None) or ''}".strip()
+    elif kind == "photo":
+        media = "🖼"
     elif m.poll:
         q = m.poll.poll.question
-        media = f"📊 опрос: {getattr(q, 'text', q)}"
+        media = f"📊 {getattr(q, 'text', q)}"
     elif m.geo:
-        media = "📍 геопозиция"
+        media = "📍"
     elif m.contact:
-        media = "👤 контакт"
-    elif m.document:
-        media = f"📎 {getattr(m.file, 'name', None) or 'файл'}"
+        media = "👤"
+    else:
+        media = ""
     text = m.message or ""
     if media:
         return f"[{media}] {text}".strip()
     return text
+
+
+def media_filename(m, kind: str) -> str:
+    """Имя файла, по которому Bot API и Telethon поймут тип вложения."""
+    mime = getattr(m.file, "mime_type", "") or ""
+    if kind == "sticker":
+        return "sticker." + {"application/x-tgsticker": "tgs", "video/webm": "webm"}.get(mime, "webp")
+    name = getattr(m.file, "name", None)
+    if kind in ("document", "audio") and name:
+        return name
+    return {"photo": "photo.jpg", "voice": "voice.ogg", "video_note": "video_note.mp4", "video": "video.mp4",
+            "gif": "animation.mp4", "audio": "audio.mp3", "document": "file"}[kind]
 
 
 class Hub:
@@ -223,7 +274,10 @@ class Hub:
         self._dlg_locks: dict[int, asyncio.Lock] = {}
         self._send_locks: dict[int, asyncio.Lock] = {}
         self._last_send: dict[int, float] = {}
-        self.on_down = None  # async (Account) -> None: уведомить админов
+        self._photos: dict[tuple[int, int], tuple[float, bytes | None]] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self.on_down = None     # async (Account) -> None: уведомить админов
+        self.on_message = None  # async (Account, event) -> None: пуш-уведомления
 
     # ─── Жизненный цикл ────────────────────────────────────────────────────
 
@@ -235,7 +289,7 @@ class Hub:
         if not self.api_ready:
             raise HubError("Не заданы API_ID и API_HASH в .env — их выдают на my.telegram.org")
         return TelegramClient(StringSession(session), self.cfg.api_id, self.cfg.api_hash,
-                              device_model="Account Hub", system_version="Account Hub", app_version="0.1",
+                              device_model="Account Hub", system_version="Account Hub", app_version="0.2",
                               lang_code="ru", system_lang_code="ru", proxy=telethon_proxy(self.cfg.proxy))
 
     async def start(self) -> None:
@@ -290,6 +344,17 @@ class Hub:
                 await client.disconnect()
             acc.connected = False
 
+    def _spawn(self, coro) -> None:
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _safe(self, coro) -> None:
+        try:
+            await coro
+        except Exception:
+            log.exception("фоновая задача упала")
+
     async def _attach(self, acc: Account, client: TelegramClient) -> None:
         """Подключённый и авторизованный клиент → в работу: профиль, события, статус."""
         me = await client.get_me()
@@ -300,11 +365,16 @@ class Hub:
             acc.photo = await client.download_profile_photo(me, file=bytes, download_big=False) or None
         await self.db.update_account(acc.id, tg_id=acc.tg_id, name=acc.name, username=acc.username, photo=acc.photo)
 
-        async def touched(event, acc_id=acc.id) -> None:
+        async def new_message(event, acc_id=acc.id) -> None:
+            self._stale.add(acc_id)
+            if self.on_message and not event.out and acc_id in self.accs:
+                self._spawn(self._safe(self.on_message(self.accs[acc_id], event)))
+
+        async def read(event, acc_id=acc.id) -> None:
             self._stale.add(acc_id)
 
-        client.add_event_handler(touched, events.NewMessage())
-        client.add_event_handler(touched, events.MessageRead())
+        client.add_event_handler(new_message, events.NewMessage())
+        client.add_event_handler(read, events.MessageRead())
         self.clients[acc.id] = client
         self._dialogs.pop(acc.id, None)
         acc.authorized = acc.connected = True
@@ -347,16 +417,29 @@ class Hub:
             await self._mark_down(self.accs[acc_id])
             raise AccountDown("Сессия слетела — нужен повторный вход") from e
         except FloodWaitError as e:
-            raise HubError(f"Telegram просит подождать {fmt_wait(e.seconds)}") from e
+            raise HubError("Telegram просит подождать {wait}", wait=fmt_wait(e.seconds)) from e
         except RPCError as e:
             for known, text in SEND_ERRORS:
                 if e.message == known if isinstance(known, str) else isinstance(e, known):
                     raise HubError(text) from e
             log.warning("#%d: %r", acc_id, e)
-            raise HubError(f"Telegram ответил ошибкой: {e.message}") from e
+            raise HubError("Telegram ответил ошибкой: {code}", code=e.message) from e
         except (ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.accs[acc_id].connected = False
             raise HubError("Нет связи с Telegram — попробуйте позже") from e
+
+    async def _throttled(self, acc_id: int, fn) -> None:
+        """Всё, что отправляет от имени аккаунта: не чаще 1 действия в 2 с."""
+        lock = self._send_locks.setdefault(acc_id, asyncio.Lock())
+        async with lock:
+            wait = self._last_send.get(acc_id, 0.0) + SEND_GAP - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                await self._call(acc_id, fn)
+            finally:
+                self._last_send[acc_id] = time.monotonic()
+        self._stale.add(acc_id)
 
     # ─── Чтение ────────────────────────────────────────────────────────────
 
@@ -376,14 +459,16 @@ class Hub:
         else:
             kind = "group" if d.is_group else "channel"
             title = d.name or "Без названия"
-        mute_until = getattr(getattr(getattr(d, "dialog", None), "notify_settings", None), "mute_until", None)
+        dialog = getattr(d, "dialog", None)
+        mute_until = getattr(getattr(dialog, "notify_settings", None), "mute_until", None)
         tg_muted = isinstance(mute_until, datetime) and mute_until > datetime.now(timezone.utc)
+        marked = bool(getattr(dialog, "unread_mark", False))
         m = d.message
         return Chat(
-            id=d.id, title=title, kind=kind, unread=d.unread_count or 0, tg_muted=tg_muted,
+            id=d.id, title=title, kind=kind, unread=(d.unread_count or 0) or int(marked), tg_muted=tg_muted,
             members=getattr(ent, "participants_count", None) or 0,
             last_text=describe(m) if m else "", last_time=self.fmt_time(m.date) if m else "",
-            last_ts=m.date.timestamp() if m and m.date else 0.0)
+            last_ts=m.date.timestamp() if m and m.date else 0.0, marked=marked)
 
     async def dialogs(self, acc_id: int, force: bool = False) -> list[Chat]:
         lock = self._dlg_locks.setdefault(acc_id, asyncio.Lock())
@@ -428,14 +513,11 @@ class Hub:
         for m in reversed(await self._call(acc_id, run)):
             if m.out:
                 who = "Вы"
-            elif chat.kind == "channel":
-                who = chat.title
-            elif chat.kind == "user":
+            elif chat.kind in ("channel", "user"):
                 who = chat.title
             else:
                 who = (utils.get_display_name(m.sender) if m.sender else "") or m.post_author or "—"
-            media = "sticker" if m.sticker else "photo" if m.photo else ""
-            out.append(Msg(bool(m.out), who, self.fmt_time(m.date), describe(m) or "…", m.id, media))
+            out.append(Msg(bool(m.out), who, self.fmt_time(m.date), describe(m) or "…", m.id, media_kind(m)))
         return out
 
     async def _message(self, c: TelegramClient, chat: Chat, msg_id: int):
@@ -445,24 +527,45 @@ class Hub:
             raise HubError("Этого сообщения уже нет")
         return peer, m
 
+    async def _download(self, c: TelegramClient, m) -> tuple[str, bytes, str]:
+        kind = media_kind(m)
+        if not kind:
+            raise HubError("Здесь нечего показать")
+        size = getattr(m.file, "size", None) or 0
+        if size > MEDIA_MAX:
+            raise HubError("Файл больше 45 МБ — через бота его не передать")
+        data = await c.download_media(m, file=bytes)
+        if not data:
+            raise HubError("Не получилось скачать вложение")
+        return kind, data, media_filename(m, kind)
+
     async def media(self, acc_id: int, chat: Chat, msg_id: int) -> tuple[str, bytes, str]:
-        """Скачать стикер или фото из сообщения → (вид, байты, имя файла для Bot API)."""
+        """Скачать вложение из сообщения → (вид, байты, имя файла для Bot API)."""
         async def run(c: TelegramClient):
             _, m = await self._message(c, chat, msg_id)
-            if m.sticker:
-                mime = getattr(m.file, "mime_type", "") or ""
-                ext = {"application/x-tgsticker": "tgs", "video/webm": "webm"}.get(mime, "webp")
-                kind = "sticker"
-            elif m.photo:
-                kind, ext = "photo", "jpg"
-            else:
-                raise HubError("Здесь нечего показать")
-            data = await c.download_media(m, file=bytes)
-            if not data:
-                raise HubError("Не получилось скачать вложение")
-            return kind, data, f"{kind}.{ext}"
+            return await self._download(c, m)
 
         return await self._call(acc_id, run)
+
+    async def chat_photo(self, acc_id: int, chat_id: int) -> bytes | None:
+        """Маленькая аватарка чата (кэш на 6 часов). Нет фото или не вышло — None."""
+        key = (acc_id, chat_id)
+        hit = self._photos.get(key)
+        if hit and time.monotonic() - hit[0] < PHOTO_TTL:
+            return hit[1]
+
+        async def run(c: TelegramClient):
+            try:
+                return await asyncio.wait_for(c.download_profile_photo(chat_id, file=bytes, download_big=False), 8)
+            except (ValueError, TypeError, asyncio.TimeoutError):
+                return None
+
+        try:
+            data = await self._call(acc_id, run) or None
+        except HubError:
+            data = None
+        self._photos[key] = (time.monotonic(), data)
+        return data
 
     async def delete(self, acc_id: int, chat: Chat, msg_id: int, revoke: bool) -> None:
         """revoke=True — удалить у всех. В группах — только свои сообщения (чужие может лишь админ группы)."""
@@ -477,10 +580,22 @@ class Hub:
 
     async def mark_read(self, acc_id: int, chat: Chat) -> None:
         async def run(c: TelegramClient):
-            await c.send_read_acknowledge(await self._peer(c, chat.id))
+            peer = await self._peer(c, chat.id)
+            await c.send_read_acknowledge(peer)
+            if chat.marked:
+                await c(MarkDialogUnreadRequest(peer=types.InputDialogPeer(peer=peer), unread=False))
 
         await self._call(acc_id, run)
-        chat.unread = 0
+        chat.unread, chat.marked = 0, False
+
+    async def mark_unread(self, acc_id: int, chat: Chat) -> None:
+        async def run(c: TelegramClient):
+            peer = await self._peer(c, chat.id)
+            await c(MarkDialogUnreadRequest(peer=types.InputDialogPeer(peer=peer), unread=True))
+
+        await self._call(acc_id, run)
+        chat.marked, chat.unread = True, max(chat.unread, 1)
+        self._stale.add(acc_id)
 
     async def search(self, acc_id: int, query: str) -> list[Chat]:
         """По названиям чатов + глобальный поиск по тексту сообщений аккаунта."""
@@ -514,7 +629,7 @@ class Hub:
 
         ent = await self._call(acc_id, run)
         if ent is None:
-            raise HubError(f"@{username} не найден — проверьте, нет ли опечатки")
+            raise HubError("@{name} не найден — проверьте, нет ли опечатки", name=username)
         if isinstance(ent, types.User):
             return Person(ent.id, utils.get_display_name(ent) or username, ent.username or username,
                           "bot" if ent.bot else "user")
@@ -529,41 +644,76 @@ class Hub:
             return None
         return max(limit - await self.db.first_contacts_since(acc_id, time.time() - 86400), 0)
 
-    # ─── Действия ──────────────────────────────────────────────────────────
-
-    async def _send(self, acc_id: int, peer_of, text: str) -> None:
-        """Не чаще 1 сообщения в 2 с на аккаунт. peer_of(client) → куда слать."""
-        lock = self._send_locks.setdefault(acc_id, asyncio.Lock())
-        async with lock:
-            wait = self._last_send.get(acc_id, 0.0) + SEND_GAP - time.monotonic()
-            if wait > 0:
-                await asyncio.sleep(wait)
-
-            async def run(c: TelegramClient):
-                await c.send_message(await peer_of(c), text)
-
-            try:
-                await self._call(acc_id, run)
-            finally:
-                self._last_send[acc_id] = time.monotonic()
-        self._stale.add(acc_id)
+    # ─── Действия от имени аккаунта ────────────────────────────────────────
 
     async def send(self, acc_id: int, chat: Chat, text: str) -> None:
         """Ответ в существующий диалог."""
-        await self._send(acc_id, lambda c: self._peer(c, chat.id), text)
+        async def run(c: TelegramClient):
+            await c.send_message(await self._peer(c, chat.id), text)
+
+        await self._throttled(acc_id, run)
+
+    async def send_file(self, acc_id: int, chat: Chat, data: bytes, filename: str, kind: str, caption: str = "") -> None:
+        """Фото, видео, голосовое, кружок, файл — из бота в переписку аккаунта."""
+        async def run(c: TelegramClient):
+            bio = io.BytesIO(data)
+            bio.name = filename
+            await c.send_file(await self._peer(c, chat.id), bio, caption=caption or None,
+                              voice_note=kind == "voice", video_note=kind == "video_note",
+                              force_document=kind == "document", supports_streaming=kind == "video")
+
+        await self._throttled(acc_id, run)
 
     async def send_first(self, acc_id: int, person: Person, text: str) -> None:
         """Первое сообщение человеку, с которым у аккаунта ещё нет переписки."""
-        async def peer_of(c: TelegramClient):
+        async def run(c: TelegramClient):
             try:
-                return await c.get_input_entity(person.id)
+                peer = await c.get_input_entity(person.id)
             except ValueError:
                 if not person.username:
                     raise HubError("Не получилось найти этого человека заново — откройте его через поиск") from None
-                return await c.get_input_entity(person.username)
+                peer = await c.get_input_entity(person.username)
+            await c.send_message(peer, text)
 
-        await self._send(acc_id, peer_of, text)
+        await self._throttled(acc_id, run)
         self._dialogs.pop(acc_id, None)  # новая переписка должна сразу появиться в списках
+
+    async def react(self, acc_id: int, chat: Chat, msg_id: int, emoji: str | None) -> None:
+        """Поставить реакцию на сообщение (None — убрать свою реакцию)."""
+        async def run(c: TelegramClient):
+            peer, _ = await self._message(c, chat, msg_id)
+            reaction = [types.ReactionEmoji(emoticon=emoji)] if emoji else []
+            await c(SendReactionRequest(peer=peer, msg_id=msg_id, reaction=reaction))
+
+        await self._throttled(acc_id, run)
+
+    async def forward(self, src: int, src_chat: Chat, msg_id: int, dst: int, dst_chat: Chat) -> str:
+        """Переслать сообщение. Один аккаунт — «настоящая» пересылка с подписью «Переслано».
+        Разные аккаунты — второй не видит чужой чат, поэтому текст и вложение копируются. Возвращает native|copy."""
+        if src == dst:
+            async def native(c: TelegramClient):
+                peer, _ = await self._message(c, src_chat, msg_id)
+                await c.forward_messages(await self._peer(c, dst_chat.id), msg_id, peer)
+
+            await self._throttled(dst, native)
+            return "native"
+
+        async def fetch(c: TelegramClient):
+            _, m = await self._message(c, src_chat, msg_id)
+            if media_kind(m):
+                return (m.message or "", *await self._download(c, m))
+            return m.message or "", "", b"", ""
+
+        text, kind, data, filename = await self._call(src, fetch)
+        if kind:
+            await self.send_file(dst, dst_chat, data, filename, kind, caption=text)
+        elif text:
+            await self.send(dst, dst_chat, text)
+        else:
+            raise HubError("Это сообщение переслать нельзя")
+        return "copy"
+
+    # ─── Управление аккаунтами ─────────────────────────────────────────────
 
     async def set_enabled(self, acc_id: int, enabled: bool) -> None:
         acc = self.accs[acc_id]

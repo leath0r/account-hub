@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from aiogram.client.session.base import BaseSession
 from aiogram.types import Chat as BotChat
-from aiogram.types import Message, PhotoSize, User as BotUser
+from aiogram.types import File, Message, PhotoSize, User as BotUser
 from telethon import errors, types
 
 NOW = datetime.now(timezone.utc)
@@ -29,6 +29,7 @@ class FakeChat:
     def __init__(self, cid: int, title: str, kind: str, msgs: list, unread: int = 0, muted: bool = False, members: int = 0):
         self.id, self.title, self.kind, self.msgs, self.unread, self.members = cid, title, kind, msgs, unread, members
         self.mute_until = NOW + timedelta(days=365) if muted else None
+        self.unread_mark = False
 
 
 class FakeAccount:
@@ -85,6 +86,11 @@ class FakeWorld:
         self.privacy = {900002}          # эти люди принимают сообщения только от контактов
         self.peer_flood = False          # аккаунт в спам-блоке
         self.deleted: list[tuple[int, int, int, bool]] = []   # (tg_id, чат, сообщение, у всех)
+        self.files: list[tuple[int, int, str, dict]] = []      # (tg_id, чат, имя файла, флаги send_file)
+        self.forwarded: list[tuple[int, int, int, int]] = []   # (tg_id, из чата, сообщение, в чат)
+        self.reactions: list[tuple[int, int, int, str | None]] = []
+        self.clients: list["FakeClient"] = []
+        self.photo: bytes | None = None                         # аватарка для чётных id (проверка аватарок на карточках)
         # справочник @username → (id, имя, вид); плюс у каждого чата-человека username ivan<tg> и т.п.
         self.directory = {
             "friend_new": (900001, "Новый Друг", "user"),
@@ -103,6 +109,32 @@ class FakeWorld:
             if username == f"n{uid}":
                 return (uid, name, "user")
         return None
+
+    async def incoming(self, tg_id: int, chat_id: int, text: str, mentioned: bool = False, sender_id: int | None = None):
+        """Новое входящее сообщение: кладём в чат и будим обработчики NewMessage живых клиентов этого аккаунта."""
+        acc = self.by_id(tg_id)
+        chat = acc.chats[chat_id]
+        uid = sender_id or (chat_id if chat.kind == "user" else tg_id * 100 + 2)
+        sender = person(uid, chat.title if chat.kind == "user" else "Дима")
+        m = fmsg(message=text, sender=sender, chat_id=chat_id, mentioned=mentioned, date=datetime.now(timezone.utc))
+        chat.msgs.append(m)
+        chat.unread += 1
+
+        async def get_sender():
+            return sender
+
+        async def get_chat():
+            return types.Chat(id=abs(chat_id), title=chat.title, photo=types.ChatPhotoEmpty(), participants_count=chat.members,
+                              date=None, version=1)
+
+        event = SimpleNamespace(out=False, is_private=chat.kind == "user", is_group=chat.kind == "group",
+                                is_channel=chat.kind != "user", chat_id=chat_id, message=m,
+                                get_sender=get_sender, get_chat=get_chat)
+        for c in self.clients:
+            if self.sessions.get(c.session.s) == tg_id:
+                for cb, kind in c.handlers:
+                    if kind == "NewMessage":
+                        await cb(event)
 
     def by_id(self, tg_id: int) -> FakeAccount:
         return next(a for a in self.accounts.values() if a.tg_id == tg_id)
@@ -128,6 +160,7 @@ class FakeClient:
         self._pending: FakeAccount | None = None
         self._known: dict[int, str] = {}   # кого клиент уже «видел» (как кэш сущностей Telethon)
         self.handlers = []
+        world.clients.append(self)
 
     # связь и вход
     async def connect(self):
@@ -178,10 +211,12 @@ class FakeClient:
         return types.User(id=a.tg_id, first_name=a.name, username=a.username or None, is_self=True)
 
     async def download_profile_photo(self, entity, file=None, download_big=True):
+        if isinstance(entity, int) and entity % 2 == 0:
+            return self.world.photo
         return None
 
     def add_event_handler(self, cb, event):
-        self.handlers.append(cb)
+        self.handlers.append((cb, type(event).__name__))
 
     # чтение
     async def get_dialogs(self, limit=None):
@@ -192,7 +227,7 @@ class FakeClient:
             out.append(SimpleNamespace(
                 id=c.id, name=c.title, entity=ent, is_user=c.kind == "user", is_group=c.kind == "group",
                 is_channel=c.kind != "user", unread_count=c.unread, message=c.msgs[-1],
-                dialog=SimpleNamespace(notify_settings=SimpleNamespace(mute_until=c.mute_until))))
+                dialog=SimpleNamespace(notify_settings=SimpleNamespace(mute_until=c.mute_until), unread_mark=c.unread_mark)))
         return out[:limit]
 
     async def get_entity(self, username):
@@ -234,7 +269,23 @@ class FakeClient:
         self.world.deleted += [(a.tg_id, peer, i, revoke) for i in message_ids]
 
     async def download_media(self, message, file=None):
-        return b"FAKE-" + (b"sticker" if message.sticker else b"photo")
+        kind = next(k for k in ("sticker", "photo", "voice", "video_note", "gif", "video", "audio", "document")
+                    if getattr(message, k, None))
+        return b"FAKE-" + kind.encode()
+
+    async def send_file(self, peer, file, caption=None, **flags):
+        a = self._me()
+        name = getattr(file, "name", "file")
+        kind = "voice" if flags.get("voice_note") else "photo" if name.endswith(".jpg") else "document"
+        a.chats[peer].msgs.append(fmsg(out=True, message=caption or "", chat_id=peer, date=datetime.now(timezone.utc),
+                                       **{kind: True}))
+        self.world.files.append((a.tg_id, peer, name, {k: v for k, v in flags.items() if v} | {"caption": caption}))
+
+    async def forward_messages(self, entity, messages, from_peer):
+        a = self._me()
+        src = next(m for m in a.chats[from_peer].msgs if m.id == messages)
+        a.chats[entity].msgs.append(fmsg(out=True, message=src.message, chat_id=entity, date=datetime.now(timezone.utc)))
+        self.world.forwarded.append((a.tg_id, from_peer, messages, entity))
 
     async def send_read_acknowledge(self, peer):
         a = self._me()
@@ -260,9 +311,17 @@ class FakeClient:
                 if search and search.lower() in (m.message or "").lower():
                     yield m
 
-    async def __call__(self, request):  # GetContactsRequest
+    async def __call__(self, request):
         a = self._me()
-        self._known.update(dict(a.contacts))
+        name = type(request).__name__
+        if name == "SendReactionRequest":
+            emoji = request.reaction[0].emoticon if request.reaction else None
+            self.world.reactions.append((a.tg_id, request.peer, request.msg_id, emoji))
+            return True
+        if name == "MarkDialogUnreadRequest":
+            a.chats[request.peer.peer].unread_mark = request.unread
+            return True
+        self._known.update(dict(a.contacts))  # GetContactsRequest
         return SimpleNamespace(users=[types.User(id=uid, first_name=name, username=f"n{uid}") for uid, name in a.contacts])
 
 
@@ -317,7 +376,7 @@ class FakeBotSession(BaseSession):
         pass
 
     async def stream_content(self, *a, **kw):
-        yield b""
+        yield b"FAKE-UPLOAD"
 
     def _check_markup(self, markup):
         if not markup:
@@ -343,12 +402,14 @@ class FakeBotSession(BaseSession):
     async def make_request(self, bot, method, timeout=None):
         name = type(method).__name__
         markup = getattr(method, "reply_markup", None)
-        is_media = name == "SendSticker" or (name == "SendPhoto" and markup and any(
-            b.callback_data == "hide" for row in markup.inline_keyboard for b in row))
+        is_media = name.startswith("Send") and name != "SendMessage" and markup and any(
+            b.callback_data == "hide" for row in markup.inline_keyboard for b in row)
         if is_media:  # стикер/фото из переписки — отдельное сообщение под экраном, не сам экран
             mid = next(self.mid)
+            field = next(f for f in ("sticker", "photo", "voice", "video_note", "video", "animation", "audio", "document")
+                         if getattr(method, f, None) is not None)
             self.media.append(SimpleNamespace(chat=method.chat_id, mid=mid, kind=name,
-                                              filename=getattr(getattr(method, "sticker", None) or method.photo, "filename", "")))
+                                              filename=getattr(getattr(method, field), "filename", "")))
             self._check_markup(markup)
             return Message(message_id=mid, date=datetime.now(), chat=BotChat(id=method.chat_id, type="private"))
         if name == "SendPhoto":
@@ -368,6 +429,8 @@ class FakeBotSession(BaseSession):
         if name == "DeleteMessage":
             self.deleted.append((method.chat_id, method.message_id))
             return True
+        if name == "GetFile":
+            return File(file_id=method.file_id, file_unique_id="u" + method.file_id, file_size=11, file_path="docs/file.bin")
         if name == "GetMe":
             return BotUser(id=42, is_bot=True, first_name="Hub", username="hub_test_bot")
         return True

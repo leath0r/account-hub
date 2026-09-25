@@ -3,10 +3,10 @@
   <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ constellation() }}{{ corners() }}</svg>
   <div class="content" style="gap:22px">
     <div class="eyebrow">Account Hub</div>
-    <div class="h1">Выберите<br>аккаунт</div>
+    <div class="h1">{{ t("Выберите<br>аккаунт")|safe }}</div>
     {% if accounts %}
-    <div class="sub">{{ accounts|length }} {{ acc_word }} · <span style="color:var(--online)">{{ online }} онлайн</span>
-      {%- if need %} · <span style="color:var(--amber)">{{ need }} ждёт входа</span>{% endif %}</div>
+    <div class="sub">{{ accounts|length }} {{ acc_word }} · <span style="color:var(--online)">{{ online }} {{ t("онлайн") }}</span>
+      {%- if need %} · <span style="color:var(--amber)">{{ need }} {{ t("ждёт входа") }}</span>{% endif %}</div>
     <div class="row" style="margin-top:auto;gap:34px;align-items:flex-end">
       {% for a in accounts[:6] %}
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
@@ -16,7 +16,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="sub">Аккаунтов пока нет</div>
+    <div class="sub">{{ t("Аккаунтов пока нет") }}</div>
     <div class="hint" style="margin-top:auto">{{ empty_hint }}</div>
     {% endif %}
   </div>

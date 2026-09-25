@@ -3,11 +3,11 @@
   <svg class="bg" width="1280" height="640" viewBox="0 0 1280 640">{{ constellation() }}{{ corners() }}</svg>
   <div class="content" style="gap:22px">
     <div class="eyebrow">Account Hub</div>
-    <div class="h1">Входящие</div>
+    <div class="h1">{{ t("Входящие") }}</div>
     {% if total %}
-    <div class="sub"><span style="color:var(--teal)">{{ total }} новых</span> в {{ chats }} {{ chats_word }}</div>
+    <div class="sub"><span style="color:var(--teal)">{{ total }} {{ t("новых") }}</span> {{ t("в") }} {{ chats }} {{ chats_word }}</div>
     {% else %}
-    <div class="sub">Всё прочитано ✓</div>
+    <div class="sub">{{ t("Всё прочитано ✓") }}</div>
     {% endif %}
     <div class="row" style="margin-top:auto;gap:44px;align-items:flex-end">
       {% for item in per_account[:6] %}

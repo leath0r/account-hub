@@ -1,6 +1,7 @@
 """Скриншоты для README: настоящий код бота на стенде (фейковый Telegram, выдуманные аккаунты) → PNG «как в Telegram».
 
-Запуск из папки hub:  python tests/screenshots.py      → ../docs/screenshots/*.png
+Запуск из папки hub:  python tests/screenshots.py      → ../docs/screenshots/*.png и ../docs/demo.gif
+Подписи к картинкам — в README (русском и английском), на самих картинках их нет.
 """
 import asyncio
 import base64
@@ -17,9 +18,14 @@ from cryptography.fernet import Fernet  # noqa: E402
 import access  # noqa: E402
 from fakes import FakeBotSession, FakeWorld  # noqa: E402
 from render import Renderer, _inline_fonts  # noqa: E402
+import notify  # noqa: E402
 from run_test import ADMIN, BOB, Stand, keypad  # noqa: E402
 
 OUT = Path(__file__).resolve().parents[2] / "docs" / "screenshots"
+GIF = OUT.parent / "demo.gif"
+# порядок кадров в demo.gif — как человек обычно идёт по боту
+DEMO = ["01-home", "02-account", "03-chats", "04-dialog", "12-reaction", "05-forward", "11-notification",
+        "08-inbox", "13-search-all", "14-settings", "15-pin", "16-stats", "17-english"]
 
 LOGO = ('<svg width="22" height="22" viewBox="0 0 120 120" fill="none"><circle cx="60" cy="60" r="46" stroke="#7C5CFC" '
         'stroke-width="8"/><circle cx="60" cy="60" r="30" stroke="#2DD4BF" stroke-width="8"/>'
@@ -28,7 +34,6 @@ LOGO = ('<svg width="22" height="22" viewBox="0 0 120 120" fill="none"><circle c
 CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0B0D11;font-family:'Manrope','Segoe UI Emoji','Noto Color Emoji','Segoe UI',sans-serif;color:#F4F5F7;padding:28px;width:468px}
-.cap{font-weight:800;font-size:13px;letter-spacing:2.5px;text-transform:uppercase;color:#2DD4BF;margin:0 0 14px 4px;max-width:410px;min-height:36px;line-height:18px}
 .phone{width:410px;min-height:780px;border-radius:34px;background:#0E1621;border:1px solid #232732;overflow:hidden;display:flex;flex-direction:column}
 .top{height:62px;flex:none;display:flex;align-items:center;gap:12px;padding:0 16px;background:#17212B;border-bottom:1px solid #0B1219}
 .top .ava{width:38px;height:38px;border-radius:50%;background:#14161C;border:1px solid #232732;display:flex;align-items:center;justify-content:center}
@@ -66,7 +71,7 @@ class ShotSession(FakeBotSession):
         return res
 
 
-def phone(st: Stand, uid: int, caption: str) -> str:
+def phone(st: Stand, uid: int) -> str:
     s = st.screen(uid)
     img = st.session.image.get(uid)
     pic = f'<img src="data:image/png;base64,{base64.b64encode(img).decode()}">' if img else ""
@@ -74,32 +79,42 @@ def phone(st: Stand, uid: int, caption: str) -> str:
     for row in (s.markup.inline_keyboard if s.markup else []):
         cells = "".join(f'<div class="b {b.style or ""}">{html.escape(b.text)}</div>' for b in row)
         rows.append(f'<div class="row">{cells}</div>')
-    return (f'<div class="cap">{html.escape(caption)}</div><div class="phone">'
-            f'<div class="top"><div class="ava">{LOGO}</div><div><div class="n">Account Hub</div><div class="s">бот</div></div></div>'
+    return ('<div class="phone">'
+            f'<div class="top"><div class="ava">{LOGO}</div><div><div class="n">Account Hub</div><div class="s">bot</div></div></div>'
             f'<div class="chat"><div class="msg">{pic}<div class="t">{s.text or ""}</div></div>'
-            f'<div class="kb">{"".join(rows)}</div></div><div class="input">Сообщение</div></div>')
+            f'<div class="kb">{"".join(rows)}</div></div><div class="input">Message</div></div>')
 
 
 async def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     OUT.mkdir(parents=True, exist_ok=True)
+    for old in OUT.glob("*.png"):
+        old.unlink()
     renderer = Renderer()
     await renderer.start()
     page = await renderer.browser.new_page(device_scale_factor=2, viewport={"width": 520, "height": 900})
     fonts = _inline_fonts()
-    shots: list[tuple[str, str]] = []
+    shots: list[str] = []
 
-    async def shot(uid: int, name: str, caption: str) -> None:
-        body = phone(st, uid, caption)
+    async def shot(uid: int, name: str) -> None:
         await page.set_content(f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>{fonts}{CSS}</style></head>"
-                               f"<body>{body}</body></html>", wait_until="load")
+                               f"<body>{phone(st, uid)}</body></html>", wait_until="load")
         await page.evaluate("document.fonts.ready.then(() => true)")
         await page.locator("body").screenshot(path=str(OUT / f"{name}.png"))
-        shots.append((name, caption))
+        shots.append(name)
         print("  ✓", name)
 
+    def button(uid: int, prefix: str, text: str = "") -> str:
+        return next(d for t, d in st.buttons(uid) if d.startswith(prefix) and text in t)
+
+    world = FakeWorld()
+    # «фото профиля» у части чатов — мягкий градиент вместо буквы
+    await page.set_content("<body style='margin:0'><div style='width:96px;height:96px;"
+                           "background:radial-gradient(circle at 30% 30%,#FDBA74,#F472B6 55%,#7C3AED)'></div></body>")
+    world.photo = await page.screenshot(type="jpeg", clip={"x": 0, "y": 0, "width": 96, "height": 96})
+    notify.DEBOUNCE = 0.2
     tmp = Path(tempfile.mkdtemp(prefix="hubshots-"))
-    st = await Stand().boot(renderer, FakeWorld(), Fernet.generate_key().decode(), tmp / "hub.db", session=ShotSession())
+    st = await Stand().boot(renderer, world, Fernet.generate_key().decode(), tmp / "hub.db", session=ShotSession())
     # кэш file_id выключаем — каждая карточка приходит картинкой, её и снимаем
     st.ui.file_ids = type("NoCache", (dict,), {"__setitem__": lambda *a: None})()
 
@@ -115,7 +130,7 @@ async def main() -> None:
             if phone_no.endswith("1"):
                 for d in "123":
                     await st.press(ADMIN, f"kp:{d}")
-                await shot(ADMIN, "07-add-account", "Админ · добавление аккаунта: код кнопками")
+                await shot(ADMIN, "07-add-account")
                 for d in "45":
                     await st.press(ADMIN, f"kp:{d}")
                 await st.press(ADMIN, "kp:ok")
@@ -127,30 +142,66 @@ async def main() -> None:
         await st.press(ADMIN, f"ar:{BOB}:1")
 
         await st.text(ADMIN, "/start")
-        await shot(ADMIN, "01-home", "Главная — /start")
+        await shot(ADMIN, "01-home")
         await st.press(ADMIN, "acc:1")
-        await shot(ADMIN, "02-account", "Меню аккаунта")
+        await shot(ADMIN, "02-account")
         await st.press(ADMIN, "ls:1:c:0")
-        await shot(ADMIN, "03-chats", "Чаты аккаунта")
+        await shot(ADMIN, "03-chats")
         await st.press(ADMIN, label="Мама")
-        await shot(ADMIN, "04-dialog", "Переписка: ответ, стикеры и фото, удаление")
-        await st.press(ADMIN, label="Удалить…")
-        await shot(ADMIN, "05-delete", "Удаление сообщения")
+        await shot(ADMIN, "04-dialog")
+
+        await st.press(ADMIN, label="Реакция")
+        await st.press(ADMIN, button(ADMIN, "rcc:"))
+        await shot(ADMIN, "12-reaction")
+        await st.press(ADMIN, label="👍")
+
+        await st.press(ADMIN, label="Переслать")
+        await st.press(ADMIN, button(ADMIN, "fwa:"))
+        await st.press(ADMIN, button(ADMIN, "fwc:", "#2"))
+        await shot(ADMIN, "05-forward")
+
         await st.press(ADMIN, "srch:1")
         await st.text(ADMIN, "@friend_new")
-        await shot(ADMIN, "06-write-first", "Поиск по @username → написать первым")
+        await shot(ADMIN, "06-write-first")
+
+        await st.text(ADMIN, "/start")
+        await world.incoming(501, 50103, "Ты где? Звоню уже второй раз 🙂")
+        await asyncio.sleep(0.6)
+        await shot(ADMIN, "11-notification")
+
+        await st.text(ADMIN, "/start")
         await st.press(ADMIN, "inbox:0")
-        await shot(ADMIN, "08-inbox", "Входящие со всех аккаунтов")
+        await shot(ADMIN, "08-inbox")
+        await st.press(ADMIN, "gs")
+        await st.text(ADMIN, "роутер")
+        await shot(ADMIN, "13-search-all")
+
+        await st.press(ADMIN, "me")
+        await st.press(ADMIN, "myq")
+        await shot(ADMIN, "14-settings")
+        await st.press(ADMIN, "pinset")
+        for d in "12":
+            await st.press(ADMIN, f"pn:{d}")
+        await shot(ADMIN, "15-pin")
+
+        await st.text(ADMIN, "/start")
         await st.press(ADMIN, "adm")
-        await shot(ADMIN, "09-admin", "Админ-панель")
+        await shot(ADMIN, "09-admin")
         await st.press(ADMIN, f"au:{BOB}")
-        await shot(ADMIN, "10-access", "Доступы пользователя")
+        await shot(ADMIN, "10-access")
+        await st.press(ADMIN, "st:7")
+        await shot(ADMIN, "16-stats")
+
+        await st.press(ADMIN, "lang")
+        await st.press(ADMIN, "lang:en")
+        await st.press(ADMIN, "acc:1")
+        await shot(ADMIN, "17-english")
     finally:
         await st.stop()
 
     # обзорная картинка для шапки README: 4 экрана в ряд
     row = "".join(f'<div style="display:inline-block;vertical-align:top;margin-right:12px"><img style="width:440px" src="{n}.png"></div>'
-                  for n in ("01-home", "02-account", "04-dialog", "07-add-account"))
+                  for n in ("01-home", "04-dialog", "11-notification", "13-search-all"))
     overview = OUT / "_overview.html"
     overview.write_text(f"<html><body style='margin:0;background:#0B0D11;white-space:nowrap;display:inline-block;"
                         f"padding:8px'>{row}</body></html>", encoding="utf-8")
@@ -160,7 +211,22 @@ async def main() -> None:
     overview.unlink()
     await page.close()
     await renderer.stop()
-    print(f"готово: {len(shots) + 1} картинок → {OUT}")
+    demo_gif()
+    print(f"готово: {len(shots) + 1} картинок и demo.gif → {OUT.parent}")
+
+
+def demo_gif() -> None:
+    """Короткая анимация для README: экраны по очереди, 1× масштаб, общая палитра — чтобы файл был лёгким."""
+    from PIL import Image
+    frames = [Image.open(OUT / f"{name}.png").convert("RGB") for name in DEMO]
+    frames = [f.resize((f.width // 2, f.height // 2), Image.LANCZOS) for f in frames]
+    w, h = max(f.width for f in frames), max(f.height for f in frames)
+    canvas = []
+    for f in frames:
+        c = Image.new("RGB", (w, h), (11, 13, 17))
+        c.paste(f, (0, 0))
+        canvas.append(c.quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE))
+    canvas[0].save(GIF, save_all=True, append_images=canvas[1:], duration=1800, loop=0, optimize=True, disposal=1)
 
 
 if __name__ == "__main__":

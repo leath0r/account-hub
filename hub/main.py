@@ -1,4 +1,4 @@
-"""Account Hub v0.1 — бот-панель для нескольких своих Telegram-аккаунтов. Бот и все клиенты — в одном процессе."""
+"""Account Hub — бот-панель для нескольких своих Telegram-аккаунтов. Бот и все клиенты — в одном процессе."""
 import asyncio
 import logging
 from contextlib import suppress
@@ -15,8 +15,10 @@ from access import Access, claim_router, prepare_claim
 from auth import Logins
 from crypto import Box
 from db import DB
+from i18n import tr
+from notify import Notifier
 from render import Renderer
-from screens import admin, user
+from screens import ROUTERS
 from tg import Account, Hub
 from ui import UI, btn, kb
 
@@ -26,10 +28,11 @@ log = logging.getLogger("hub")
 def build_dispatcher(hub: Hub, ui: UI, logins: Logins) -> Dispatcher:
     dp = Dispatcher()
     dp["hub"], dp["ui"], dp["logins"] = hub, ui, logins
+    dp["dp"] = dp  # PIN: после верного кода отложенное нажатие прогоняется через диспетчер ещё раз
     access = Access(hub)
     dp.message.outer_middleware(access)
     dp.callback_query.outer_middleware(access)
-    dp.include_routers(claim_router, admin.router, user.router)
+    dp.include_routers(claim_router, *ROUTERS)
 
     @dp.errors()
     async def on_error(event: ErrorEvent) -> None:
@@ -39,35 +42,46 @@ def build_dispatcher(hub: Hub, ui: UI, logins: Logins) -> Dispatcher:
 
 
 async def setup_profile(bot: Bot, renderer: Renderer) -> None:
-    await bot.set_my_commands([
-        BotCommand(command="start", description="Главная — выбор аккаунта"),
-        BotCommand(command="admin", description="Админ-панель"),
-    ])
-    await bot.set_my_short_description("Панель для нескольких своих Telegram-аккаунтов")
-    await bot.set_my_description(
-        "Account Hub — работайте с несколькими своими Telegram-аккаунтами из одного чата: "
-        "чаты, группы, поиск, входящие. Доступ выдаёт администратор.")
+    for lang in ("ru", "en"):
+        await bot.set_my_commands([
+            BotCommand(command="start", description=tr(lang, "Главная — выбор аккаунта")),
+            BotCommand(command="admin", description=tr(lang, "Админ-панель")),
+        ], language_code=None if lang == "ru" else lang)
+        await bot.set_my_short_description(tr(lang, "Панель для нескольких своих Telegram-аккаунтов"),
+                                           language_code=None if lang == "ru" else lang)
+        await bot.set_my_description(
+            tr(lang, "Account Hub — работайте с несколькими своими Telegram-аккаунтами из одного чата: "
+                     "чаты, группы, поиск, входящие, уведомления. Доступ выдаёт администратор."),
+            language_code=None if lang == "ru" else lang)
     avatar = config.BASE / "avatar.png"
     if not avatar.exists():
         _, png = await renderer.render("avatar.html", size=(640, 640))
         avatar.write_bytes(png)
 
 
-def notifier(bot: Bot, hub: Hub):
+def notifier_down(bot: Bot, hub: Hub):
     async def account_down(acc: Account) -> None:
-        text = f"🟠 <b>Аккаунт #{acc.id} {escape(acc.name)}</b> — сессия слетела, нужен повторный вход."
         for uid in await hub.admin_ids():
+            u = await hub.db.user(uid)
+            lang = (u["lang"] if u else None) or "ru"
+            text = tr(lang, "🟠 <b>Аккаунт #{n} {name}</b> — сессия слетела, нужен повторный вход.", n=acc.id, name=escape(acc.name))
             with suppress(Exception):
-                await bot.send_message(uid, text, reply_markup=kb([btn("🔑 Войти заново", f"relog:{acc.id}", "primary")]))
+                await bot.send_message(uid, text, reply_markup=kb([btn(tr(lang, "🔑 Войти заново"), f"relog:{acc.id}", "primary")]))
     return account_down
+
+
+notifier = notifier_down  # старое имя — для стенда
 
 
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
                         handlers=[logging.StreamHandler(),
-                                  RotatingFileHandler(config.BASE / "hub.log", maxBytes=2_000_000, backupCount=3, encoding="utf-8")])
+                                  RotatingFileHandler(config.LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8")])
     logging.getLogger("telethon").setLevel(logging.WARNING)
     cfg = config.load()
+    if not cfg.bot_token:
+        log.error("BOT_TOKEN не задан — впишите токен от @BotFather в %s и перезапустите", config.ENV)
+        raise SystemExit(2)
     db = DB(cfg.db_path)
     await db.connect()
     hub = Hub(cfg, db, Box(cfg.session_key))
@@ -79,7 +93,8 @@ async def main() -> None:
               default=DefaultBotProperties(parse_mode="HTML", link_preview_is_disabled=True))
     logins = Logins(hub)
     dp = build_dispatcher(hub, UI(bot, renderer, db), logins)
-    hub.on_down = notifier(bot, hub)
+    hub.on_down = notifier_down(bot, hub)
+    hub.on_message = Notifier(bot, hub).on_message
     sweeper = asyncio.create_task(logins.sweep())
     try:
         if not hub.api_ready:

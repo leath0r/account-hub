@@ -1,0 +1,17 @@
+# в образ — только hub/ (код, шаблоны, шрифты, стенд). Секреты и данные — никогда.
+.git
+.github
+demo
+design
+docs
+**/.env
+**/*.db
+**/*.db-*
+**/*.log
+**/*.log.*
+**/backups
+**/__pycache__
+**/venv
+**/.venv
+data
+hub/deploy

@@ -7,13 +7,13 @@
       <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
         <div class="eyebrow">{{ eyebrow }}</div>
         <div class="h1" style="font-size:60px">{{ a.name }}</div>
-        <div class="sub">{{ a.handle }} · {{ a.phone_masked }}</div>
+        <div class="sub">{% if a.username %}@{{ a.username }}{% else %}{{ t("без username") }}{% endif %} · {{ a.phone_masked }}</div>
       </div>
-      <div class="chip" style="margin-left:auto;align-self:flex-start"><span class="dot" style="background:{{ a.status_color }}"></span>{{ a.status_label }}</div>
+      <div class="chip" style="margin-left:auto;align-self:flex-start"><span class="dot" style="background:{{ a.status_color }}"></span>{{ t(a.status_label) }}</div>
     </div>
     <div class="row" style="margin-top:auto;gap:24px;align-items:stretch">
-      {% for t in tiles %}
-      <div class="tile"><div class="num" style="color:{{ t.color }}">{{ t.num }}</div><div class="lbl">{{ t.label }}</div></div>
+      {% for tile in tiles %}
+      <div class="tile"><div class="num" style="color:{{ tile.color }}">{{ tile.num }}</div><div class="lbl">{{ tile.label }}</div></div>
       {% endfor %}
     </div>
   </div>

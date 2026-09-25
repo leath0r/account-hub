@@ -33,5 +33,26 @@ jobs:
       - name: pyflakes
         run: python -m pyflakes *.py screens/*.py tests/*.py deploy/*.py
 
+      - name: переводы — у каждой строки интерфейса есть английская
+        run: python tests/i18n_check.py
+
       - name: стенд — сценарии и 800 случайных нажатий
         run: python -u tests/run_test.py 800
+
+  docker:
+    name: Docker-образ
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: сборка
+        run: docker build -t account-hub .
+
+      - name: стенд внутри образа
+        run: docker run --rm account-hub python -u tests/run_test.py 200
+
+      - name: без .env бот падает понятно, а не молча
+        run: |
+          out=$(docker run --rm -v hubdata:/data account-hub 2>&1 || true)
+          echo "$out" | tail -5
+          echo "$out" | grep -q "BOT_TOKEN"

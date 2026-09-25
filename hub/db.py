@@ -1,4 +1,5 @@
 """SQLite (WAL): пользователи, аккаунты, доступы, настройки, журнал, кэш карточек."""
+import json
 import time
 from pathlib import Path
 
@@ -59,7 +60,23 @@ CREATE TABLE IF NOT EXISTS card_cache (
     key     TEXT PRIMARY KEY,
     file_id TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS events (           -- для статистики: кто что сделал, по видам
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         INTEGER NOT NULL,
+    user_id    INTEGER,
+    account_id INTEGER,
+    kind       TEXT    NOT NULL                -- open · reply · media · first · delete · react · forward · read_all · notify
+);
+CREATE INDEX IF NOT EXISTS events_ts ON events (ts);
 """
+
+# Колонки, добавленные после первой версии: на уже живой базе их докидывает _migrate
+USER_COLUMNS = {
+    "lang": "TEXT",                                  # ru | en; NULL — ещё не выбран (берём из Telegram)
+    "pin": "TEXT",                                   # соль$хэш PBKDF2 или NULL
+    "quiet": "INTEGER NOT NULL DEFAULT 0",           # тихие уведомления 23:00–08:00
+    "groups": "INTEGER NOT NULL DEFAULT 0",          # уведомлять обо всех сообщениях в группах, а не только об упоминаниях
+}
 
 ACCOUNT_FIELDS = {"tg_id", "name", "username", "phone", "session", "enabled", "photo"}
 
@@ -73,7 +90,14 @@ class DB:
         self.c = await aiosqlite.connect(self.path)
         self.c.row_factory = aiosqlite.Row
         await self.c.executescript(SCHEMA)
+        await self._migrate()
         await self.c.commit()
+
+    async def _migrate(self) -> None:
+        have = {r["name"] for r in await self._all("PRAGMA table_info(users)")}
+        for col, ddl in USER_COLUMNS.items():
+            if col not in have:
+                await self.c.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
 
     async def close(self) -> None:
         if self.c:
@@ -120,6 +144,21 @@ class DB:
 
     async def set_banned(self, uid: int, banned: bool) -> None:
         await self._exec("UPDATE users SET banned = ? WHERE id = ?", int(banned), uid)
+
+    async def set_user(self, uid: int, **fields) -> None:
+        """Личные настройки: lang, pin, quiet, groups."""
+        bad = set(fields) - set(USER_COLUMNS)
+        if bad:
+            raise ValueError(f"unknown user fields: {bad}")
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        await self._exec(f"UPDATE users SET {sets} WHERE id = ?", *fields.values(), uid)
+
+    async def audience(self, acc_id: int, admin_ids: set[int]) -> list[aiosqlite.Row]:
+        """Кто видит аккаунт: админы и люди с ролью на него (без забаненных) — для уведомлений."""
+        ids = ",".join(str(int(i)) for i in admin_ids) or "0"
+        return await self._all(
+            f"SELECT * FROM users WHERE banned = 0 AND (admin = 1 OR id IN ({ids}) OR id IN "
+            "(SELECT user_id FROM access WHERE account_id = ?))", acc_id)
 
     # ─── Аккаунты ──────────────────────────────────────────────────────────
 
@@ -185,13 +224,36 @@ class DB:
 
     # ─── Журнал ────────────────────────────────────────────────────────────
 
-    async def log(self, uid: int | None, acc_id: int | None, action: str) -> None:
+    async def log(self, uid: int | None, acc_id: int | None, action: str, **kw) -> None:
+        """action — русский шаблон из интерфейса, kw — подстановки. Хранится JSON-ом, чтобы журнал
+        показывался на языке того, кто его открыл (старые записи — простым текстом)."""
+        if kw:
+            action = json.dumps({"t": action, "kw": kw}, ensure_ascii=False)
         await self._exec("INSERT INTO audit (ts, user_id, account_id, action) VALUES (?, ?, ?, ?)",
                          int(time.time()), uid, acc_id, action)
 
     async def recent(self, n: int = 15) -> list[aiosqlite.Row]:
         return await self._all("SELECT a.ts, a.action, u.name FROM audit a LEFT JOIN users u ON u.id = a.user_id "
                                "ORDER BY a.id DESC LIMIT ?", n)
+
+    # ─── События и статистика ──────────────────────────────────────────────
+
+    async def event(self, uid: int | None, acc_id: int | None, kind: str) -> None:
+        await self._exec("INSERT INTO events (ts, user_id, account_id, kind) VALUES (?, ?, ?, ?)",
+                         int(time.time()), uid, acc_id, kind)
+
+    async def stats_accounts(self, since: float) -> list[aiosqlite.Row]:
+        return await self._all("SELECT account_id, kind, COUNT(*) AS n FROM events WHERE ts >= ? AND account_id IS NOT NULL "
+                               "GROUP BY account_id, kind", int(since))
+
+    async def stats_users(self, since: float) -> list[aiosqlite.Row]:
+        return await self._all("SELECT e.user_id, u.name, COUNT(*) AS n, MAX(e.ts) AS last FROM events e "
+                               "LEFT JOIN users u ON u.id = e.user_id WHERE e.ts >= ? AND e.user_id IS NOT NULL "
+                               "AND e.kind != 'notify' GROUP BY e.user_id ORDER BY n DESC LIMIT 15", int(since))
+
+    async def stats_kinds(self, since: float) -> dict[str, int]:
+        rows = await self._all("SELECT kind, COUNT(*) AS n FROM events WHERE ts >= ? GROUP BY kind", int(since))
+        return {r["kind"]: r["n"] for r in rows}
 
     # ─── Первые сообщения новым людям ──────────────────────────────────────
 

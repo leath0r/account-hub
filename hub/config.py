@@ -7,7 +7,9 @@ from pathlib import Path
 from cryptography.fernet import Fernet
 
 BASE = Path(__file__).parent
-ENV = BASE / ".env"
+# В Docker всё изменяемое лежит в томе: HUB_ENV_FILE=/data/.env, DB_PATH=/data/hub.db, HUB_LOG_FILE=/data/hub.log
+ENV = Path(os.environ.get("HUB_ENV_FILE") or BASE / ".env")
+LOG_FILE = Path(os.environ.get("HUB_LOG_FILE") or BASE / "hub.log")
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,7 @@ def _session_key() -> str:
     if key:
         return key
     key = Fernet.generate_key().decode()
+    ENV.parent.mkdir(parents=True, exist_ok=True)
     with ENV.open("a", encoding="utf-8") as f:
         f.write("\n# Ключ шифрования сессий. Потеряешь — все аккаунты придётся перелогинить. В git и бэкапы не класть.\n"
                 f"SESSION_KEY={key}\n")
@@ -47,7 +50,7 @@ def load() -> Config:
     _read_env()
     api_id = os.environ.get("API_ID", "").strip()
     return Config(
-        bot_token=os.environ["BOT_TOKEN"],
+        bot_token=os.environ.get("BOT_TOKEN", "").strip(),
         api_id=int(api_id) if api_id.isdigit() else None,
         api_hash=os.environ.get("API_HASH", "").strip() or None,
         admin_ids=frozenset(int(x) for x in os.environ.get("ADMIN_IDS", "").replace(",", " ").split() if x.isdigit()),

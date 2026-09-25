@@ -48,20 +48,21 @@ class LoginExpired(LoginError):
     """Вход брошен дольше 10 минут или уже закрыт — начинать заново."""
 
 
-def explain(e: Exception) -> str:
+def fail(e: Exception) -> LoginError:
+    """Ошибка Telethon → LoginError с переводимым шаблоном."""
     if isinstance(e, errors.FloodWaitError):
-        return f"Слишком много попыток. Повторить через {fmt_wait(e.seconds)}"
+        return LoginError("Слишком много попыток. Повторить через {wait}", wait=fmt_wait(e.seconds))
     for cls, text in ERRORS:
         if isinstance(e, cls):
-            return text
+            return LoginError(text)
     if isinstance(e, HubError):
-        return str(e)
+        return LoginError(e.msg, **e.kw)
     if isinstance(e, (ConnectionError, OSError, asyncio.TimeoutError)):
-        return "Нет связи с Telegram — попробуйте позже"
+        return LoginError("Нет связи с Telegram — попробуйте позже")
     if isinstance(e, errors.RPCError):
-        return f"Telegram: {e.message}"
+        return LoginError("Telegram: {code}", code=e.message)
     log.exception("login failed", exc_info=e)
-    return "Что-то пошло не так — попробуйте ещё раз"
+    return LoginError("Что-то пошло не так — попробуйте ещё раз")
 
 
 @dataclass
@@ -88,7 +89,7 @@ class Logins:
             sent = await client.send_code_request(phone)
         except Exception as e:
             await self._close(client)
-            raise LoginError(explain(e)) from e
+            raise fail(e) from e
         kind = type(sent.type).__name__
         if "SetUpEmail" in kind:
             await self._close(client)
@@ -109,7 +110,7 @@ class Logins:
         try:
             sent = await p.client.send_code_request(p.phone)
         except Exception as e:
-            raise LoginError(explain(e)) from e
+            raise fail(e) from e
         p.code_hash = sent.phone_code_hash
         p.code_len = getattr(sent.type, "length", None) or p.code_len
         p.via = VIA.get(type(sent.type).__name__, p.via)
@@ -124,7 +125,7 @@ class Logins:
         except errors.SessionPasswordNeededError:
             return None
         except Exception as e:
-            raise LoginError(explain(e)) from e
+            raise fail(e) from e
         return await self._finish(uid, p)
 
     async def password(self, uid: int, password: str) -> tuple[Account, str]:
@@ -132,7 +133,7 @@ class Logins:
         try:
             await p.client.sign_in(password=password)
         except Exception as e:
-            raise LoginError(explain(e)) from e
+            raise fail(e) from e
         return await self._finish(uid, p)
 
     async def _finish(self, uid: int, p: Pending) -> tuple[Account, str]:
@@ -141,7 +142,7 @@ class Logins:
             return await self.hub.adopt(p.client, p.phone, p.account_id)
         except Exception as e:
             await self._close(p.client)
-            raise LoginError(explain(e)) from e
+            raise fail(e) from e
 
     async def cancel(self, uid: int) -> None:
         p = self.pending.pop(uid, None)

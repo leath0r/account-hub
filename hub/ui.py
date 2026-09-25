@@ -62,6 +62,13 @@ class UI:
         else:
             self.screens.pop(uid, None)
 
+    async def adopt(self, uid: int, msg: Message | None) -> None:
+        """Сделать экраном другое сообщение (например, уведомление), а прежний экран удалить."""
+        cur = self.screens.get(uid)
+        if cur and isinstance(msg, Message) and (cur[0], cur[1]) != (msg.chat.id, msg.message_id):
+            await self._delete(cur)
+        self.attach(uid, msg)
+
     async def drop(self, uid: int) -> None:
         cur = self.screens.pop(uid, None)
         if cur:

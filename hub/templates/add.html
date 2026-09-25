@@ -18,7 +18,7 @@
     {% if state == "phone" %}
     <div class="row" style="gap:40px;margin-bottom:10px">
       <div class="field{% if error %} err{% endif %}">+7 000 000-00-00</div>
-      <div class="hint">{% if error %}<span style="color:var(--amber)">{{ error }}</span><br>{% endif %}Отправьте номер<br>сообщением —<br>сразу удалю его</div>
+      <div class="hint">{% if error %}<span style="color:var(--amber)">{{ error }}</span><br>{% endif %}{{ t("Отправьте номер<br>сообщением —<br>сразу удалю его")|safe }}</div>
     </div>
 
     {% elif state == "code" %}
@@ -31,7 +31,7 @@
         {% if error %}
         <div class="hint" style="color:var(--amber)">{{ error }}</div>
         {% else %}
-        <div class="hint">Вводите кнопками ниже —<br>код, отправленный текстом,<br>Telegram сразу сжигает</div>
+        <div class="hint">{{ t("Вводите кнопками ниже —<br>код, отправленный текстом,<br>Telegram сразу сжигает")|safe }}</div>
         {% endif %}
       </div>
     </div>
@@ -39,7 +39,7 @@
     {% elif state == "password" %}
     <div class="row" style="gap:40px;margin-bottom:10px">
       <div class="field" style="font-size:48px;letter-spacing:10px">• • • • • • • •</div>
-      <div class="hint">Включена 2FA.<br>Отправьте пароль —<br>удалю сразу</div>
+      <div class="hint">{{ t("Включена 2FA.<br>Отправьте пароль —<br>удалю сразу")|safe }}</div>
     </div>
 
     {% elif state == "done" %}
@@ -50,7 +50,7 @@
           <svg width="48" height="48" viewBox="0 0 20 20" fill="none" stroke="#34D399" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4 4 8-8"/></svg>
           <div style="font-family:'Unbounded',sans-serif;font-weight:700;font-size:44px">{{ done_title }}</div>
         </div>
-        <div class="hint">{{ a.name }} · {{ a.handle }} · сессия готова к работе</div>
+        <div class="hint">{{ a.name }} · {% if a.username %}@{{ a.username }}{% else %}{{ t("без username") }}{% endif %} · {{ t("сессия готова к работе") }}</div>
       </div>
     </div>
     {% endif %}
